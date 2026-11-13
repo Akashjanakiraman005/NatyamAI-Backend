@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: natyam-ai-backend
+    env: python
+    plan: free
+    region: oregon
+    dockerfilePath: backend/Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
