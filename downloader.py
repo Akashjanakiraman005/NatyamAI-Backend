@@ -30,6 +30,9 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
     clean_url = normalize_youtube_url(url)
     print(f"Downloading normalized YouTube URL: {clean_url}")
 
+    pytubefix_errors = []
+    proc = None
+
     # Method 1: Try pytubefix with WEB and ANDROID clients
     for client_type in ["WEB", "ANDROID"]:
         try:
@@ -54,6 +57,7 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
                 return output_path
         except Exception as e:
             print(f"pytubefix ({client_type}) failed: {e}")
+            pytubefix_errors.append(f"{client_type}: {e}")
 
     # Method 2: yt-dlp fallback
     has_ffmpeg = bool(shutil.which("ffmpeg") or shutil.which("ffmpeg.exe"))
@@ -92,7 +96,8 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
     )
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-        raise RuntimeError("Unable to download video from YouTube. Please use the 'Choose Video from Gallery' option.")
+        err_msg = f"Download failed. pytubefix: {'; '.join(pytubefix_errors)}. yt-dlp: {proc.stderr[:200] if proc else 'none'}"
+        raise RuntimeError(err_msg)
 
     return output_path
 
