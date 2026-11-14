@@ -239,7 +239,7 @@ export default function App() {
   const [recordDuration, setRecordDuration] = useState(60);
   const [feedbackModel, setFeedbackModel] = useState("");
   const [jointVisibility, setJointVisibility] = useState([]);
-  const [sampleRoutineName, setSampleRoutineName] = useState("");
+  const [galleryVideoUrl, setGalleryVideoUrl] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -248,31 +248,9 @@ export default function App() {
   const framesRef = useRef([]);
   const elapsedRef = useRef(0);
   const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // ── Step 1: Load reference ────────────────────────────────────────────────
-
-  async function handleLoadSample(sampleId, name) {
-    setError("");
-    setPhase("loading-ref");
-    setStatusMsg(`Loading ${name}...`);
-    setYoutubeId(null);
-    setSampleRoutineName(name);
-
-    try {
-      const res = await fetch(`${serverUrl}/api/load-sample`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sample_id: sampleId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to load routine");
-      setStatusMsg(`Reference ready: ${data.name} — ${data.frame_count} frames (${Math.round(data.duration_seconds)}s)`);
-      setPhase("ready");
-    } catch (e) {
-      setError(e.message);
-      setPhase("home");
-    }
-  }
 
   async function handleUploadVideo(e) {
     const file = e.target.files?.[0];
@@ -282,7 +260,10 @@ export default function App() {
     setPhase("loading-ref");
     setStatusMsg(`Uploading & extracting poses from ${file.name}...`);
     setYoutubeId(null);
-    setSampleRoutineName(file.name);
+    try {
+      const localBlob = URL.createObjectURL(file);
+      setGalleryVideoUrl(localBlob);
+    } catch (_) {}
 
     const formData = new FormData();
     formData.append("file", file);
@@ -310,6 +291,7 @@ export default function App() {
     }
     setError("");
     setYoutubeId(vid);
+    setGalleryVideoUrl(null);
     setPhase("loading-ref");
     setStatusMsg("Downloading reference video and extracting poses...");
 
@@ -560,26 +542,12 @@ export default function App() {
             </p>
             <input
               style={styles.input}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="Paste YouTube Video URL (https://www.youtube.com/watch?...)"
               value={youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLoadReference()}
               disabled={phase === "loading-ref"}
             />
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: "#c9a96e", textTransform: "uppercase", letterSpacing: 1 }}>Backend AI Server</span>
-                <span style={{ fontSize: 11, color: serverOnline ? "#44ff88" : serverOnline === false ? "#ff5555" : "#c9a96e", fontFamily: "monospace" }}>
-                  {serverOnline ? "● CONNECTED" : serverOnline === false ? "○ OFFLINE" : "◌ CHECKING"}
-                </span>
-              </div>
-              <input
-                style={{ ...styles.input, marginBottom: 0, fontSize: 12, padding: "8px 12px" }}
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                disabled={phase === "loading-ref"}
-              />
-            </div>
             {error && <div style={styles.error}>{error}</div>}
             <button
               style={{
@@ -592,77 +560,58 @@ export default function App() {
               {phase === "loading-ref" ? (
                 <span style={styles.spinner}>⟳ {statusMsg}</span>
               ) : (
-                "▶ Load Reference Video from YouTube"
+                "▶ Load YouTube Video"
               )}
             </button>
 
-            {/* Quick pre-loaded routines & file upload */}
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-              <div style={{ fontSize: 11, color: "#c9a96e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
-                Instant Practice (No YouTube Download Needed)
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-                <button
-                  type="button"
-                  style={{
-                    flex: "1 1 140px",
-                    background: "rgba(201, 169, 110, 0.12)",
-                    border: "1px solid rgba(201, 169, 110, 0.3)",
-                    color: "#f5e6c8",
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                  onClick={() => handleLoadSample("alarippu", "Alarippu (Aramandi & Adavu)")}
-                  disabled={phase === "loading-ref"}
-                >
-                  𑁍 Alarippu Routine (20s)
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    flex: "1 1 140px",
-                    background: "rgba(201, 169, 110, 0.12)",
-                    border: "1px solid rgba(201, 169, 110, 0.3)",
-                    color: "#f5e6c8",
-                    padding: "10px 12px",
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                  onClick={() => handleLoadSample("natta_adavu", "Natta Adavu (Heel & Stretch)")}
-                  disabled={phase === "loading-ref"}
-                >
-                  𑁍 Natta Adavu (16s)
-                </button>
-              </div>
-
-              <label
-                style={{
-                  display: "block",
-                  textAlign: "center",
-                  background: "rgba(255, 255, 255, 0.05)",
-                  border: "1px dashed rgba(255, 255, 255, 0.2)",
-                  color: "#aaa",
-                  padding: "10px",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                📁 Upload Dance Video from Phone Gallery
-                <input
-                  type="file"
-                  accept="video/*"
-                  onChange={handleUploadVideo}
-                  disabled={phase === "loading-ref"}
-                  style={{ display: "none" }}
-                />
-              </label>
+            {/* OR Divider */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                margin: "18px 0",
+                color: "#888",
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 2,
+              }}
+            >
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+              <span style={{ padding: "0 12px", color: "#c9a96e", fontWeight: 700 }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
             </div>
+
+            {/* Gallery video picker */}
+            <button
+              type="button"
+              style={{
+                width: "100%",
+                background: "linear-gradient(135deg, rgba(201, 169, 110, 0.25), rgba(201, 169, 110, 0.08))",
+                border: "1px solid #c9a96e",
+                color: "#f5e6c8",
+                padding: "14px 18px",
+                borderRadius: 10,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              disabled={phase === "loading-ref"}
+            >
+              📁 Choose Video from Gallery
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*"
+              onChange={handleUploadVideo}
+              disabled={phase === "loading-ref"}
+              style={{ display: "none" }}
+            />
 
             {phase === "loading-ref" && (
               <div style={styles.progressBar}>
@@ -677,7 +626,7 @@ export default function App() {
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
             {/* Reference view */}
             <div style={{ flex: "1 1 420px" }}>
-              <div style={styles.label}>Reference Routine</div>
+              <div style={styles.label}>Reference Performance</div>
               <div style={styles.videoWrap}>
                 {youtubeId ? (
                   <iframe
@@ -688,6 +637,13 @@ export default function App() {
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     style={{ borderRadius: 10 }}
+                  />
+                ) : galleryVideoUrl ? (
+                  <video
+                    src={galleryVideoUrl}
+                    controls
+                    playsInline
+                    style={{ width: "100%", maxHeight: 280, borderRadius: 10, background: "#000" }}
                   />
                 ) : (
                   <div
@@ -706,7 +662,7 @@ export default function App() {
                   >
                     <div style={{ fontSize: 36, marginBottom: 8, color: "#c9a96e" }}>𑁍</div>
                     <div style={{ color: "#f5e6c8", fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
-                      {sampleRoutineName || "Bharatanatyam Reference Loaded"}
+                      Reference Video Loaded
                     </div>
                     <div style={{ fontSize: 12, color: "#aaa", maxWidth: 320, lineHeight: 1.5 }}>
                       Reference sequence calibrated. Stand 6–8 feet away from your phone camera in Aramandi posture when you start!
