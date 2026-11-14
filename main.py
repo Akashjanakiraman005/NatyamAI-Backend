@@ -118,6 +118,16 @@ async def load_sample(payload: dict):
     }
 
 
+@app.get("/api/debug-download")
+async def debug_download(url: str = "https://www.youtube.com/shorts/gbdlTwTIjj0"):
+    import traceback
+    try:
+        path = await download_youtube_video(url, str(UPLOAD_DIR))
+        return {"status": "ok", "path": path, "size": os.path.getsize(path)}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+
 @app.post("/api/prepare-reference")
 async def prepare_reference(payload: dict):
     """Download YouTube video and extract pose sequence."""
@@ -152,15 +162,6 @@ async def prepare_reference(payload: dict):
         tb = traceback.format_exc()
         print(f"prepare-reference error type={type(e).__name__} repr={e!r}")
         print(tb)
-        err_str = str(e)
-        if "429" in err_str or "Too Many Requests" in err_str or "403" in err_str or "Forbidden" in err_str:
-            detail = (
-                "YouTube rate-limited automated cloud downloads (HTTP 429). "
-                "Please choose a built-in Bharatanatyam routine below (Alarippu / Natta Adavu) "
-                "or upload your dance video file directly using the 'Upload Video File' button."
-            )
-            raise HTTPException(status_code=429, detail=detail)
-
         detail = str(e) or f"{type(e).__name__}: {e!r}"
         raise HTTPException(status_code=500, detail=detail)
 
