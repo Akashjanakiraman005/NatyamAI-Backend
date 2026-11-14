@@ -102,8 +102,8 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
     return output_path
 
 
-async def extract_frames(video_path: str, fps: int = 15, max_seconds: int = 60) -> list:
-    """Extract frames from video at specified FPS."""
+async def extract_frames(video_path: str, fps: int = 5, max_seconds: int = 30) -> list:
+    """Extract frames from video at memory-safe FPS for cloud containers."""
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -121,7 +121,7 @@ async def extract_frames(video_path: str, fps: int = 15, max_seconds: int = 60) 
         if not ret:
             break
         if frame_idx % frame_interval == 0:
-            frame = cv2.resize(frame, (640, 480))
+            frame = cv2.resize(frame, (320, 240))
             frames.append(frame)
         frame_idx += 1
 

@@ -58,13 +58,13 @@ async def upload_reference(file: UploadFile = File(...)):
         with open(video_path, "wb") as f:
             f.write(contents)
 
-        frames = await extract_frames(video_path, fps=15, max_seconds=60)
+        frames = await extract_frames(video_path, fps=5, max_seconds=30)
         pose_seq = await extract_pose_sequence(frames)
 
         session_id = "default"
         reference_store[session_id] = {
             "poses": pose_seq,
-            "fps": 15,
+            "fps": 5,
             "video_path": video_path,
         }
 
@@ -72,7 +72,7 @@ async def upload_reference(file: UploadFile = File(...)):
             "status": "ok",
             "session_id": session_id,
             "frame_count": len(pose_seq),
-            "duration_seconds": len(pose_seq) / 15,
+            "duration_seconds": len(pose_seq) / 5,
         }
     except Exception as e:
         import traceback
@@ -139,7 +139,7 @@ async def prepare_reference(payload: dict):
         print(f"prepare-reference start url={youtube_url}")
         video_path = await download_youtube_video(youtube_url, str(UPLOAD_DIR))
         print(f"prepare-reference downloaded video_path={video_path}")
-        frames = await extract_frames(video_path, fps=15, max_seconds=60)
+        frames = await extract_frames(video_path, fps=5, max_seconds=30)
         print(f"prepare-reference extracted frames={len(frames)}")
         pose_seq = await extract_pose_sequence(frames)
         print(f"prepare-reference extracted poses={len(pose_seq)}")
@@ -147,7 +147,7 @@ async def prepare_reference(payload: dict):
         session_id = "default"
         reference_store[session_id] = {
             "poses": pose_seq,
-            "fps": 15,
+            "fps": 5,
             "video_path": video_path,
         }
 
@@ -155,7 +155,7 @@ async def prepare_reference(payload: dict):
             "status": "ok",
             "session_id": session_id,
             "frame_count": len(pose_seq),
-            "duration_seconds": len(pose_seq) / 15,
+            "duration_seconds": len(pose_seq) / 5,
         }
     except Exception as e:
         import traceback
