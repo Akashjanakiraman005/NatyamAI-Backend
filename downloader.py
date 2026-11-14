@@ -32,6 +32,11 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
         sys.executable,
         "-m",
         "yt_dlp",
+        "--extractor-args",
+        "youtube:player_client=android,ios,mweb",
+        "--no-check-certificates",
+        "--socket-timeout",
+        "30",
     ]
 
     if node_path:
