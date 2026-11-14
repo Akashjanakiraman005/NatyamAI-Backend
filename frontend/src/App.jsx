@@ -12,7 +12,8 @@ function formatTime(s) {
 }
 
 function extractYouTubeId(url) {
-  const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([^&?\/\s]{11})/);
+  if (!url) return null;
+  const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
@@ -307,7 +308,7 @@ export default function App() {
           "Bypass-Tunnel-Reminder": "true",
         },
         signal: controller.signal,
-        body: JSON.stringify({ url: youtubeUrl }),
+        body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${vid}` }),
       });
       clearTimeout(timeoutId);
       const data = await res.json();

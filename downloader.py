@@ -3,12 +3,21 @@ import os
 import cv2
 import sys
 import shutil
+import re
 import subprocess
 from pathlib import Path
 
 
+def normalize_youtube_url(url: str) -> str:
+    """Normalize any YouTube URL (Shorts, mobile, youtu.be, query params) to standard watch format."""
+    match = re.search(r'(?:v=|youtu\.be/|shorts/|embed/|watch\?v=)([a-zA-Z0-9_-]{11})', url)
+    if match:
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    return url
+
+
 async def download_youtube_video(url: str, output_dir: str) -> str:
-    """Download YouTube video using pytubefix (bypasses 429/PO-token) with yt-dlp fallback."""
+    """Download YouTube video or Shorts using pytubefix with yt-dlp fallback."""
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "reference.mp4")
 
@@ -18,28 +27,33 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
         except Exception:
             pass
 
-    # Method 1: Try pytubefix with WEB client (bypasses datacenter 429 blocks)
-    try:
-        def _download_pytubefix():
-            from pytubefix import YouTube
-            yt = YouTube(url, client="WEB")
-            # Select 360p or 480p video stream (visual only, ideal for pose estimation)
-            stream = (
-                yt.streams.filter(only_video=True, resolution="360p").first()
-                or yt.streams.filter(only_video=True, resolution="480p").first()
-                or yt.streams.filter(only_video=True).order_by("resolution").asc().first()
-                or yt.streams.filter(progressive=True).first()
-            )
-            if not stream:
-                raise RuntimeError("No suitable video stream found via pytubefix")
-            out_file = stream.download(output_path=output_dir, filename="reference.mp4")
-            return out_file
+    clean_url = normalize_youtube_url(url)
+    print(f"Downloading normalized YouTube URL: {clean_url}")
 
-        result = await asyncio.to_thread(_download_pytubefix)
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            return output_path
-    except Exception as e:
-        print(f"pytubefix attempt failed ({e}), falling back to yt-dlp...")
+    # Method 1: Try pytubefix with WEB and ANDROID clients
+    for client_type in ["WEB", "ANDROID"]:
+        try:
+            def _download_pytubefix():
+                from pytubefix import YouTube
+                yt = YouTube(clean_url, client=client_type)
+                # Select visual stream (360p or 480p)
+                stream = (
+                    yt.streams.filter(only_video=True, resolution="360p").first()
+                    or yt.streams.filter(only_video=True, resolution="480p").first()
+                    or yt.streams.filter(only_video=True).order_by("resolution").asc().first()
+                    or yt.streams.filter(progressive=True).first()
+                )
+                if not stream:
+                    raise RuntimeError("No suitable video stream found")
+                out_file = stream.download(output_path=output_dir, filename="reference.mp4")
+                return out_file
+
+            result = await asyncio.to_thread(_download_pytubefix)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                print(f"pytubefix ({client_type}) download succeeded: {os.path.getsize(output_path)} bytes")
+                return output_path
+        except Exception as e:
+            print(f"pytubefix ({client_type}) failed: {e}")
 
     # Method 2: yt-dlp fallback
     has_ffmpeg = bool(shutil.which("ffmpeg") or shutil.which("ffmpeg.exe"))
@@ -60,7 +74,7 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
         format_selector,
         "-o",
         output_path,
-        url,
+        clean_url,
     ]
 
     if node_path:
@@ -78,7 +92,7 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
     )
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-        raise RuntimeError(f"Video download failed. Please select the video from your phone Gallery.")
+        raise RuntimeError("Unable to download video from YouTube. Please use the 'Choose Video from Gallery' option.")
 
     return output_path
 
