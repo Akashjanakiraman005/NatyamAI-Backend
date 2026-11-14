@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import uvicorn
 import asyncio
 import base64
@@ -29,11 +29,93 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Endpoint to download the latest compiled NatyamAI.apk directly over HTTPS
+@app.get("/download-apk")
+async def download_apk():
+    apk_path = Path(r"C:\Users\Admin\Downloads\NatyamAI.apk")
+    if not apk_path.exists():
+        raise HTTPException(status_code=404, detail="APK not found")
+    return FileResponse(
+        path=str(apk_path),
+        filename="NatyamAI.apk",
+        media_type="application/vnd.android.package-archive"
+    )
+
 # In-memory store for reference pose sequence
 reference_store = {}
 
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "bharata_uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+@app.post("/api/upload-reference")
+async def upload_reference(file: UploadFile = File(...)):
+    """Upload a reference video directly from phone or browser."""
+    try:
+        suffix = Path(file.filename).suffix or ".mp4"
+        video_path = str(UPLOAD_DIR / f"reference{suffix}")
+        contents = await file.read()
+        with open(video_path, "wb") as f:
+            f.write(contents)
+
+        frames = await extract_frames(video_path, fps=15, max_seconds=60)
+        pose_seq = await extract_pose_sequence(frames)
+
+        session_id = "default"
+        reference_store[session_id] = {
+            "poses": pose_seq,
+            "fps": 15,
+            "video_path": video_path,
+        }
+
+        return {
+            "status": "ok",
+            "session_id": session_id,
+            "frame_count": len(pose_seq),
+            "duration_seconds": len(pose_seq) / 15,
+        }
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"upload-reference error: {tb}")
+        raise HTTPException(status_code=500, detail=f"Failed to process uploaded video: {e}")
+
+
+@app.get("/api/samples")
+async def list_samples():
+    """List pre-loaded Bharatanatyam reference routines."""
+    return [
+        {"id": "alarippu", "name": "Alarippu (Aramandi & Adavu)", "duration": "20s"},
+        {"id": "natta_adavu", "name": "Natta Adavu (Heel & Arm Stretch)", "duration": "16s"}
+    ]
+
+
+@app.post("/api/load-sample")
+async def load_sample(payload: dict):
+    """Load a pre-computed sample Bharatanatyam routine instantly."""
+    sample_id = payload.get("sample_id", "alarippu")
+    sample_file = Path("samples") / f"{sample_id}.json"
+    if not sample_file.exists():
+        raise HTTPException(status_code=404, detail="Sample routine not found")
+
+    with open(sample_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    session_id = "default"
+    reference_store[session_id] = {
+        "poses": data["poses"],
+        "fps": 15,
+        "video_path": None,
+        "sample_name": data.get("name", sample_id)
+    }
+
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "name": data.get("name", sample_id),
+        "frame_count": data["frame_count"],
+        "duration_seconds": data["duration_seconds"],
+    }
 
 
 @app.post("/api/prepare-reference")
@@ -67,15 +149,19 @@ async def prepare_reference(payload: dict):
         }
     except Exception as e:
         import traceback
-
         tb = traceback.format_exc()
         print(f"prepare-reference error type={type(e).__name__} repr={e!r}")
         print(tb)
+        err_str = str(e)
+        if "429" in err_str or "Too Many Requests" in err_str or "403" in err_str or "Forbidden" in err_str:
+            detail = (
+                "YouTube rate-limited automated cloud downloads (HTTP 429). "
+                "Please choose a built-in Bharatanatyam routine below (Alarippu / Natta Adavu) "
+                "or upload your dance video file directly using the 'Upload Video File' button."
+            )
+            raise HTTPException(status_code=429, detail=detail)
+
         detail = str(e) or f"{type(e).__name__}: {e!r}"
-        if detail and detail != str(e):
-            detail = detail
-        else:
-            detail = f"{detail}\n{tb}"
         raise HTTPException(status_code=500, detail=detail)
 
 

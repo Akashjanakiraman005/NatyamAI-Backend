@@ -239,6 +239,7 @@ export default function App() {
   const [recordDuration, setRecordDuration] = useState(60);
   const [feedbackModel, setFeedbackModel] = useState("");
   const [jointVisibility, setJointVisibility] = useState([]);
+  const [sampleRoutineName, setSampleRoutineName] = useState("");
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -249,6 +250,57 @@ export default function App() {
   const streamRef = useRef(null);
 
   // ── Step 1: Load reference ────────────────────────────────────────────────
+
+  async function handleLoadSample(sampleId, name) {
+    setError("");
+    setPhase("loading-ref");
+    setStatusMsg(`Loading ${name}...`);
+    setYoutubeId(null);
+    setSampleRoutineName(name);
+
+    try {
+      const res = await fetch(`${serverUrl}/api/load-sample`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sample_id: sampleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to load routine");
+      setStatusMsg(`Reference ready: ${data.name} — ${data.frame_count} frames (${Math.round(data.duration_seconds)}s)`);
+      setPhase("ready");
+    } catch (e) {
+      setError(e.message);
+      setPhase("home");
+    }
+  }
+
+  async function handleUploadVideo(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError("");
+    setPhase("loading-ref");
+    setStatusMsg(`Uploading & extracting poses from ${file.name}...`);
+    setYoutubeId(null);
+    setSampleRoutineName(file.name);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch(`${serverUrl}/api/upload-reference`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to process video");
+      setStatusMsg(`Reference ready — ${data.frame_count} frames (${Math.round(data.duration_seconds)}s)`);
+      setPhase("ready");
+    } catch (e) {
+      setError(e.message);
+      setPhase("home");
+    }
+  }
 
   async function handleLoadReference() {
     const vid = extractYouTubeId(youtubeUrl);
@@ -540,9 +592,77 @@ export default function App() {
               {phase === "loading-ref" ? (
                 <span style={styles.spinner}>⟳ {statusMsg}</span>
               ) : (
-                "▶ Load Reference Video"
+                "▶ Load Reference Video from YouTube"
               )}
             </button>
+
+            {/* Quick pre-loaded routines & file upload */}
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ fontSize: 11, color: "#c9a96e", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
+                Instant Practice (No YouTube Download Needed)
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <button
+                  type="button"
+                  style={{
+                    flex: "1 1 140px",
+                    background: "rgba(201, 169, 110, 0.12)",
+                    border: "1px solid rgba(201, 169, 110, 0.3)",
+                    color: "#f5e6c8",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                  onClick={() => handleLoadSample("alarippu", "Alarippu (Aramandi & Adavu)")}
+                  disabled={phase === "loading-ref"}
+                >
+                  𑁍 Alarippu Routine (20s)
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: "1 1 140px",
+                    background: "rgba(201, 169, 110, 0.12)",
+                    border: "1px solid rgba(201, 169, 110, 0.3)",
+                    color: "#f5e6c8",
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                  onClick={() => handleLoadSample("natta_adavu", "Natta Adavu (Heel & Stretch)")}
+                  disabled={phase === "loading-ref"}
+                >
+                  𑁍 Natta Adavu (16s)
+                </button>
+              </div>
+
+              <label
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px dashed rgba(255, 255, 255, 0.2)",
+                  color: "#aaa",
+                  padding: "10px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                📁 Upload Dance Video from Phone Gallery
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={handleUploadVideo}
+                  disabled={phase === "loading-ref"}
+                  style={{ display: "none" }}
+                />
+              </label>
+            </div>
 
             {phase === "loading-ref" && (
               <div style={styles.progressBar}>
@@ -555,19 +675,44 @@ export default function App() {
         {/* ── READY ── */}
         {phase === "ready" && (
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            {/* YouTube embed */}
+            {/* Reference view */}
             <div style={{ flex: "1 1 420px" }}>
-              <div style={styles.label}>Reference Video</div>
+              <div style={styles.label}>Reference Routine</div>
               <div style={styles.videoWrap}>
-                <iframe
-                  width="100%"
-                  height="280"
-                  src={`https://www.youtube.com/embed/${youtubeId}?autoplay=0`}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  style={{ borderRadius: 10 }}
-                />
+                {youtubeId ? (
+                  <iframe
+                    width="100%"
+                    height="280"
+                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=0`}
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    style={{ borderRadius: 10 }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: 220,
+                      background: "rgba(201, 169, 110, 0.08)",
+                      border: "1px solid rgba(201, 169, 110, 0.25)",
+                      borderRadius: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 20,
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ fontSize: 36, marginBottom: 8, color: "#c9a96e" }}>𑁍</div>
+                    <div style={{ color: "#f5e6c8", fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
+                      {sampleRoutineName || "Bharatanatyam Reference Loaded"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#aaa", maxWidth: 320, lineHeight: 1.5 }}>
+                      Reference sequence calibrated. Stand 6–8 feet away from your phone camera in Aramandi posture when you start!
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={styles.hint}>
                 Study the reference, then hit Practice when ready.
