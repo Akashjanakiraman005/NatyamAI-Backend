@@ -33,8 +33,8 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
     pytubefix_errors = []
     proc = None
 
-    # Method 1: Try pytubefix with WEB and ANDROID clients
-    for client_type in ["WEB", "ANDROID"]:
+    # Method 1: Try pytubefix with multiple clients
+    for client_type in ["WEB", "ANDROID", "IOS"]:
         try:
             def _download_pytubefix():
                 from pytubefix import YouTube
@@ -59,10 +59,10 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
             print(f"pytubefix ({client_type}) failed: {e}")
             pytubefix_errors.append(f"{client_type}: {e}")
 
-    # Method 2: yt-dlp fallback
+    # Method 2: yt-dlp fallback with safari and android_creator clients
     has_ffmpeg = bool(shutil.which("ffmpeg") or shutil.which("ffmpeg.exe"))
     format_selector = (
-        "bestvideo[height<=480][ext=mp4]/best[height<=480][ext=mp4]/best[height<=480]"
+        "bestvideo[height<=480][ext=mp4]+bestaudio/best[height<=480][ext=mp4]/best"
     )
 
     node_path = shutil.which("node") or shutil.which("node.exe")
@@ -71,7 +71,7 @@ async def download_youtube_video(url: str, output_dir: str) -> str:
         "-m",
         "yt_dlp",
         "--extractor-args",
-        "youtube:player_client=android,ios,mweb",
+        "youtube:player_client=safari,android_creator,android",
         "--no-check-certificates",
         "--no-playlist",
         "-f",

@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 
-const DEFAULT_SERVER = "https://natyamai-backend.onrender.com";
+const SERVERS = [
+  "https://unspreadable-pandora-inklike.ngrok-free.dev",
+  "https://natyamai-backend.onrender.com"
+];
+const DEFAULT_SERVER = SERVERS[0];
 const MAX_RECORD_SECONDS = 60;
 const CAPTURE_FPS = 10; // frames per second captured from webcam
 
@@ -13,7 +17,7 @@ function formatTime(s) {
 
 function extractYouTubeId(url) {
   if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
+  const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
@@ -202,17 +206,41 @@ function TimelineBar({ issues, duration, onSeek }) {
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [serverUrl, setServerUrl] = useState(() => {
-    const saved = localStorage.getItem("natyam_server_url");
-    if (!saved || saved.includes("ngrok") || saved.includes("localhost")) {
-      return DEFAULT_SERVER;
-    }
-    return saved;
-  });
+  const [serverUrl, setServerUrl] = useState(SERVERS[0]);
   const [serverOnline, setServerOnline] = useState(null);
 
+  async function callApi(endpoint, options = {}) {
+    const serversToTry = SERVERS;
+    let lastError = null;
+
+    for (const s of serversToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const url = `${s}${endpoint}`;
+        const headers = {
+          "ngrok-skip-browser-warning": "true",
+          "Bypass-Tunnel-Reminder": "true",
+          ...(options.headers || {}),
+        };
+        const res = await fetch(url, { ...options, headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          setServerUrl(s);
+          return await res.json();
+        }
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Server returned ${res.status}`);
+      } catch (err) {
+        lastError = err;
+        console.warn(`Request to ${s}${endpoint} failed:`, err);
+      }
+    }
+    throw lastError || new Error("Failed to process request");
+  }
+
   useEffect(() => {
-    localStorage.setItem("natyam_server_url", serverUrl);
+    localStorage.removeItem("natyam_server_url");
     // Ping health endpoint on server change
     fetch(`${serverUrl}/api/health`, {
       headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }
@@ -270,16 +298,14 @@ export default function App() {
     formData.append("file", file);
 
     try {
-      const res = await fetch(`${serverUrl}/api/upload-reference`, {
+      const data = await callApi("/api/upload-reference", {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to process video");
       setStatusMsg(`Reference ready — ${data.frame_count} frames (${Math.round(data.duration_seconds)}s)`);
       setPhase("ready");
     } catch (e) {
-      setError(e.message);
+      setError(e.message || "Failed to process video");
       setPhase("home");
     }
   }
@@ -287,7 +313,7 @@ export default function App() {
   async function handleLoadReference() {
     const vid = extractYouTubeId(youtubeUrl);
     if (!vid) {
-      setError("Please enter a valid YouTube URL.");
+      setError("Please enter a valid YouTube or YouTube Shorts link.");
       return;
     }
     setError("");
@@ -296,28 +322,17 @@ export default function App() {
     setPhase("loading-ref");
     setStatusMsg("Downloading reference video and extracting poses...");
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000);
-
     try {
-      const res = await fetch(`${serverUrl}/api/prepare-reference`, {
+      const data = await callApi("/api/prepare-reference", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-          "Bypass-Tunnel-Reminder": "true",
-        },
-        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${vid}` }),
       });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to prepare reference");
 
       setStatusMsg(`Reference ready — ${data.frame_count} frames (${Math.round(data.duration_seconds)}s)`);
       setPhase("ready");
     } catch (e) {
-      setError(e.message);
+      setError(e.message || "Failed to prepare reference video");
       setPhase("home");
     }
   }
@@ -424,26 +439,16 @@ export default function App() {
 
   async function analyzeFrames(capturedFrames) {
     setStatusMsg(`Analyzing ${capturedFrames.length} frames against reference...`);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000);
 
     try {
-      const res = await fetch(`${serverUrl}/api/analyze`, {
+      const data = await callApi("/api/analyze", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true",
-          "Bypass-Tunnel-Reminder": "true",
-        },
-        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: "default",
           frames: capturedFrames,
         }),
       });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Analysis failed");
 
       setIssues(data.issues || []);
       setFeedbackModel(data.feedback_model || data.feedback_source || "unknown");
@@ -543,7 +548,7 @@ export default function App() {
             </p>
             <input
               style={styles.input}
-              placeholder="Paste YouTube Video URL (https://www.youtube.com/watch?...)"
+              placeholder="Paste YouTube Video or Shorts URL"
               value={youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLoadReference()}
