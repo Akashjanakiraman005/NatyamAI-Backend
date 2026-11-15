@@ -6,7 +6,7 @@ const SERVERS = [
 ];
 const DEFAULT_SERVER = SERVERS[0];
 const MAX_RECORD_SECONDS = 60;
-const CAPTURE_FPS = 10; // frames per second captured from webcam
+const CAPTURE_FPS = 5; // frames per second captured from webcam (memory & network optimized)
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +207,7 @@ function TimelineBar({ issues, duration, onSeek }) {
 
 export default function App() {
   const [serverUrl, setServerUrl] = useState(SERVERS[0]);
+  const [referenceServer, setReferenceServer] = useState(null);
   const [serverOnline, setServerOnline] = useState(null);
 
   async function getServersInPriorityOrder() {
@@ -228,7 +229,10 @@ export default function App() {
   }
 
   async function callApi(endpoint, options = {}, timeoutMs = 120000) {
-    const serversToTry = await getServersInPriorityOrder();
+    const serversToTry = (endpoint === "/api/analyze" && referenceServer)
+      ? [referenceServer, ...SERVERS.filter((x) => x !== referenceServer)]
+      : await getServersInPriorityOrder();
+
     let lastError = null;
 
     for (const s of serversToTry) {
@@ -245,6 +249,9 @@ export default function App() {
         clearTimeout(timeoutId);
         if (res.ok) {
           setServerUrl(s);
+          if (endpoint === "/api/prepare-reference" || endpoint === "/api/upload-reference") {
+            setReferenceServer(s);
+          }
           return await res.json();
         }
         const data = await res.json().catch(() => ({}));
@@ -261,19 +268,22 @@ export default function App() {
     if (isAbort) {
       throw new Error("Server took too long to respond. Please check your internet and try again.");
     }
+    const isFetchErr = lastError?.message?.includes("Failed to fetch") || lastError?.name === "TypeError";
+    if (isFetchErr) {
+      throw new Error("Could not connect to AI server. Please make sure you have internet access and retry.");
+    }
     throw lastError || new Error("Failed to process request");
   }
 
   useEffect(() => {
     localStorage.removeItem("natyam_server_url");
-    // Ping health endpoint on server change
-    fetch(`${serverUrl}/api/health`, {
-      headers: { "ngrok-skip-browser-warning": "true", "Bypass-Tunnel-Reminder": "true" }
-    })
-      .then((r) => r.json())
-      .then((d) => setServerOnline(d?.status === "ok"))
-      .catch(() => setServerOnline(false));
-  }, [serverUrl]);
+    // Warm up Render in background so it never sleeps
+    fetch(`${SERVERS[1]}/api/health`).catch(() => {});
+    const interval = setInterval(() => {
+      fetch(`${SERVERS[1]}/api/health`).catch(() => {});
+    }, 180000);
+    return () => clearInterval(interval);
+  }, []);
 
   const [phase, setPhase] = useState("home"); // home | loading-ref | ready | practice | analyzing | results
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -426,10 +436,10 @@ export default function App() {
   function captureFrame() {
     if (!videoRef.current || !canvasRef.current || videoRef.current.videoWidth === 0) return;
     const ctx = canvasRef.current.getContext("2d");
-    canvasRef.current.width = 640;
-    canvasRef.current.height = 480;
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-    const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.6);
+    canvasRef.current.width = 320;
+    canvasRef.current.height = 240;
+    ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+    const dataUrl = canvasRef.current.toDataURL("image/jpeg", 0.5);
     const ts = framesRef.current.length / CAPTURE_FPS;
     framesRef.current.push({ timestamp: ts, data: dataUrl });
     setCapturedCount(framesRef.current.length);
@@ -799,13 +809,27 @@ export default function App() {
             <div style={{ flex: "1 1 300px" }}>
               <div style={styles.label}>Reference</div>
               <div style={styles.videoWrap}>
-                <iframe
-                  width="100%"
-                  height="240"
-                  src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1`}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  style={{ borderRadius: 10, border: "none" }}
-                />
+                {youtubeId ? (
+                  <iframe
+                    width="100%"
+                    height="240"
+                    src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    style={{ borderRadius: 10, border: "none" }}
+                  />
+                ) : galleryVideoUrl ? (
+                  <video
+                    src={galleryVideoUrl}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    controls
+                    style={{ width: "100%", maxHeight: 240, borderRadius: 10, background: "#000" }}
+                  />
+                ) : (
+                  <div style={{ padding: 40, textAlign: "center", color: "#666" }}>Reference Video</div>
+                )}
               </div>
               <div style={styles.hint}>
                 {capturedCount} frames captured
