@@ -209,14 +209,32 @@ export default function App() {
   const [serverUrl, setServerUrl] = useState(SERVERS[0]);
   const [serverOnline, setServerOnline] = useState(null);
 
-  async function callApi(endpoint, options = {}) {
-    const serversToTry = SERVERS;
+  async function getServersInPriorityOrder() {
+    // Quick 2-second check if local residential server is responsive
+    try {
+      const c = new AbortController();
+      const tid = setTimeout(() => c.abort(), 2000);
+      const ping = await fetch(`${SERVERS[0]}/api/health`, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+        signal: c.signal,
+      });
+      clearTimeout(tid);
+      if (ping.ok) {
+        return [SERVERS[0], SERVERS[1]];
+      }
+    } catch (_) {}
+    // If local server is not responding, prioritize Render immediately
+    return [SERVERS[1], SERVERS[0]];
+  }
+
+  async function callApi(endpoint, options = {}, timeoutMs = 120000) {
+    const serversToTry = await getServersInPriorityOrder();
     let lastError = null;
 
     for (const s of serversToTry) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         const url = `${s}${endpoint}`;
         const headers = {
           "ngrok-skip-browser-warning": "true",
@@ -235,6 +253,13 @@ export default function App() {
         lastError = err;
         console.warn(`Request to ${s}${endpoint} failed:`, err);
       }
+    }
+    const isAbort =
+      lastError?.name === "AbortError" ||
+      lastError?.message?.includes("aborted") ||
+      lastError?.message?.includes("signal");
+    if (isAbort) {
+      throw new Error("Server took too long to respond. Please check your internet and try again.");
     }
     throw lastError || new Error("Failed to process request");
   }
